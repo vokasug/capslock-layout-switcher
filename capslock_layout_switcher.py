@@ -20,7 +20,7 @@ Run:
     python capslock_layout_switcher.py        (console visible -- for debugging)
 
 Autostart (no console window):
-    Copy dist\capslock_switcher.exe to:
+    Copy dist\capslock_layout_switcher.exe to:
     Win+R -> shell:startup
 
 Requires: Windows, Python 3.x

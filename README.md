@@ -41,7 +41,7 @@ No more awkward `Alt+Shift` or `Win+Space` finger gymnastics. One tap on Caps Lo
 
 ### Option 1: Ready-made executable
 
-1. Download `capslock_switcher.exe` from the [Releases](../../releases) page.
+1. Download `capslock_layout_switcher.exe` from the [Releases](../../releases) page.
 2. Double-click to run. No installation, no Python, no dependencies.
 3. (Optional) Place it in your autostart folder for automatic launch on login:
    ```
