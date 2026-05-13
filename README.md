@@ -32,6 +32,7 @@ No more awkward `Alt+Shift` or `Win+Space` finger gymnastics. One tap on Caps Lo
 | **System-native mechanism** | Uses the same Windows API as `Alt+Shift`, works in every app. |
 | **Single-instance guard** | Prevents accidental duplicate launches with a friendly dialog. |
 | **System tray icon** | Blue "CL" icon with a menu to copy source or exit. |
+| **Alt+Shift emulation mode** | Optional: emulate physical `Alt+Shift` instead of Windows API (toggle via tray menu). |
 | **Self-contained .exe** | No Python, no dependencies, no installation. |
 | **Open source** | Public domain — use freely for any purpose. |
 
@@ -69,7 +70,12 @@ The `.exe` will appear in the `dist/` folder.
 
 ### Layout switching
 
-The program installs a low-level keyboard hook (`WH_KEYBOARD_LL`). When Caps Lock is pressed, it sends a `WM_INPUTLANGCHANGEREQUEST` message to the foreground window. This is the same mechanism Windows uses when you press `Alt+Shift` or click the language bar — so the switch is **system-native** and works in every application.
+The program installs a low-level keyboard hook (`WH_KEYBOARD_LL`). When Caps Lock is pressed, it either:
+
+- **Emulates `Alt+Shift`** (default) — synthesizes physical keypresses just like you pressed the real keys. Works reliably even when the Windows API method fails.
+- **Uses Windows API** — sends a `WM_INPUTLANGCHANGEREQUEST` message to the foreground window. This is the same mechanism Windows uses when you click the language bar.
+
+Toggle between the two modes from the tray icon menu: **Emulate Alt+Shift**.
 
 The program queries the list of installed layouts at runtime via `GetKeyboardLayoutList`. If you have 2 layouts, it toggles between them. If you have 5, it cycles through all 5 in order.
 
@@ -92,17 +98,19 @@ This works reliably regardless of whether the tray icon is enabled or not.
 
 ## Configuration
 
-Open `capslock_layout_switcher.py` in any text editor. Two flags near the top control behavior:
+Open `capslock_layout_switcher.py` in any text editor. Three flags near the top control behavior:
 
 ```python
 ENABLE_LOGGING = 0      # 1 = write capslock_switcher.log next to the .exe
 ENABLE_TRAY_ICON = 1    # 0 = run completely silent, no tray icon
+EMULATE_ALT_SHIFT = 1   # 1 = emulate Alt+Shift keypress, 0 = use Windows API
 ```
 
 | Flag | `0` | `1` |
 |---|---|---|
 | `ENABLE_LOGGING` | No log file created | Debug log written to application folder |
 | `ENABLE_TRAY_ICON` | No tray icon, no menu | Tray icon with right-click menu |
+| `EMULATE_ALT_SHIFT` | Use Windows API (`WM_INPUTLANGCHANGEREQUEST`) | Emulate physical `Alt+Shift` keypress |
 
 Changes take effect the next time you run the program.
 

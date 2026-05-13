@@ -7,6 +7,8 @@ On every Caps Lock press:
   2. Checks if Caps Lock is on and turns it off if needed
 
 Tray icon (right click):
+  - Emulate Alt+Shift -- toggles between Alt+Shift emulation (default ON)
+                        and direct layout switching via Windows API
   - Copy PY source code -- copies the full source code to clipboard
   - Exit -- closes the program
 
@@ -38,6 +40,7 @@ import traceback
 # ═══════════════════════════════════════════════════════════════════
 ENABLE_LOGGING = 0      # 0 = no log file created
 ENABLE_TRAY_ICON = 1    # 0 = run without tray icon
+EMULATE_ALT_SHIFT = 1   # 1 = emulate Alt+Shift keypress, 0 = use Windows API
 
 # ═══════════════════════════════════════════════════════════════════
 #  RUNTIME PATHS (.py vs frozen .exe)
@@ -86,6 +89,8 @@ WM_KEYUP = 0x0101
 WM_SYSKEYDOWN = 0x0104
 WM_SYSKEYUP = 0x0105
 VK_CAPITAL = 0x14
+VK_LSHIFT = 0xA0
+VK_LMENU = 0xA4
 KEYEVENTF_KEYUP = 0x0002
 
 WM_INPUTLANGCHANGEREQUEST = 0x0050
@@ -160,6 +165,8 @@ class BITMAPINFO(ctypes.Structure):
 
 # Menu
 MF_STRING = 0x0000
+MF_CHECKED = 0x0008
+MF_UNCHECKED = 0x0000
 TPM_RETURNCMD = 0x0100
 TPM_RIGHTBUTTON = 0x0002
 
@@ -360,6 +367,7 @@ _g_nid = None
 _g_hMenu = None
 _g_hCustomIcon = None
 _g_running = True
+_g_emulate_alt_shift = bool(EMULATE_ALT_SHIFT)
 
 # ═══════════════════════════════════════════════════════════════════
 #  CLIPBOARD
@@ -440,16 +448,23 @@ def get_source_code() -> str:
 # ═══════════════════════════════════════════════════════════════════
 #  TRAY
 # ═══════════════════════════════════════════════════════════════════
+MENU_ID_EMULATE = 1000
 MENU_ID_COPY = 1001
 MENU_ID_EXIT = 1002
 
 def create_tray_menu():
     h_menu = user32.CreatePopupMenu()
+    flags = MF_STRING | (MF_CHECKED if _g_emulate_alt_shift else MF_UNCHECKED)
+    user32.AppendMenuW(h_menu, flags, MENU_ID_EMULATE, "Emulate Alt+Shift")
     user32.AppendMenuW(h_menu, MF_STRING, MENU_ID_COPY, "Copy PY source code")
     user32.AppendMenuW(h_menu, MF_STRING, MENU_ID_EXIT, "Exit")
     return h_menu
 
 def show_tray_menu(hwnd):
+    global _g_hMenu
+    if _g_hMenu:
+        user32.DestroyMenu(_g_hMenu)
+    _g_hMenu = create_tray_menu()
     pt = POINT()
     user32.GetCursorPos(ctypes.byref(pt))
     user32.SetForegroundWindow(hwnd)
@@ -485,6 +500,16 @@ def show_tray_menu(hwnd):
             _g_nid.dwInfoFlags = 0x03
             _g_nid.uFlags = NIF_INFO
             shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(_g_nid))
+    elif cmd == MENU_ID_EMULATE:
+        global _g_emulate_alt_shift
+        _g_emulate_alt_shift = not _g_emulate_alt_shift
+        state = "ON" if _g_emulate_alt_shift else "OFF"
+        log(f"Tray: Emulate Alt+Shift toggled -> {state}")
+        _g_nid.szInfoTitle = "CapsLock Switcher"
+        _g_nid.szInfo = f"Emulate Alt+Shift: {state}"
+        _g_nid.dwInfoFlags = 0x01
+        _g_nid.uFlags = NIF_INFO
+        shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(_g_nid))
 
 @WNDPROC
 def tray_wndproc(hwnd, msg, w_param, l_param):
@@ -504,6 +529,17 @@ def tray_wndproc(hwnd, msg, w_param, l_param):
                 copy_to_clipboard(source)
             except Exception:
                 pass
+        elif cmd_id == MENU_ID_EMULATE:
+            global _g_emulate_alt_shift
+            _g_emulate_alt_shift = not _g_emulate_alt_shift
+            state = "ON" if _g_emulate_alt_shift else "OFF"
+            log(f"Tray: Emulate Alt+Shift toggled -> {state}")
+            if _g_nid:
+                _g_nid.szInfoTitle = "CapsLock Switcher"
+                _g_nid.szInfo = f"Emulate Alt+Shift: {state}"
+                _g_nid.dwInfoFlags = 0x01
+                _g_nid.uFlags = NIF_INFO
+                shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(_g_nid))
         return 0
     elif msg == WM_DESTROY:
         user32.PostQuitMessage(0)
@@ -743,6 +779,15 @@ class LayoutSwitcher:
         else:
             log("  Caps already OFF")
 
+    def _emulate_alt_shift(self):
+        """Emulate Alt+Shift keypress to switch keyboard layout."""
+        log("  -> emulate Alt+Shift")
+        # Alt down, Shift down, Shift up, Alt up
+        user32.keybd_event(VK_LMENU, 0x38, 0, 0)
+        user32.keybd_event(VK_LSHIFT, 0x2A, 0, 0)
+        user32.keybd_event(VK_LSHIFT, 0x2A, KEYEVENTF_KEYUP, 0)
+        user32.keybd_event(VK_LMENU, 0x38, KEYEVENTF_KEYUP, 0)
+
     def _switch_layout(self):
         try:
             hwnd = user32.GetForegroundWindow()
@@ -811,8 +856,12 @@ class LayoutSwitcher:
             if w_param in (WM_KEYDOWN, WM_SYSKEYDOWN):
                 self._processing = True
                 try:
-                    log("  -> switch_layout + turn_off_caps")
-                    self._switch_layout()
+                    if _g_emulate_alt_shift:
+                        log("  -> emulate_alt_shift + turn_off_caps")
+                        self._emulate_alt_shift()
+                    else:
+                        log("  -> switch_layout + turn_off_caps")
+                        self._switch_layout()
                     self._turn_off_caps()
                 except Exception as exc:
                     log(f"  ERROR in handler: {exc}")
